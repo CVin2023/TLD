@@ -3,9 +3,11 @@ import os
 import torch.nn as nn
 # from torch.nn.modules.upsampling import Upsample
 from torch.nn.functional import interpolate
-from model.attention import GlobalContextBlock
+# from model.attention import GlobalContextBlock
 from backbone.vgg import B2_VGG
-from backbone.Shunted.SSA import shunted_b
+# from backbone.Shunted.SSA import shunted_b
+from TLD_BGRNet.Shunted.SSA import shunted_b
+
 import sys
 from collections import OrderedDict
 import functools
@@ -41,10 +43,10 @@ class Net(nn.Module):
         # self.vgg = B2_VGG('rgb')
         # self.vgg_dep = B2_VGG('dep')
         self.backbone = shunted_b()
-        load_state_dict = torch.load('/home/jcm/PycharmProject/TLD/backbone/Shunted/ckpt_B.pth')
+        load_state_dict = torch.load('D:\TLD\TLD_BGRNet\Shunted\ckpt_B.pth')
         self.backbone.load_state_dict(load_state_dict)
         self.backbone_d = shunted_b()
-        load_state_dict = torch.load('/home/jcm/PycharmProject/TLD/backbone/Shunted/ckpt_B.pth')
+        load_state_dict = torch.load('D:\TLD\TLD_BGRNet\Shunted\ckpt_B.pth')
         self.backbone_d.load_state_dict(load_state_dict)
         # self.fusion5 = Fusion1(in_plane1=512)
         self.fusion4 = Fusion1(in_plane1=512)
@@ -75,15 +77,16 @@ class Net(nn.Module):
 
         merges = []
 
-        merge = self.fusion1(rgb[0], dep[0])
-        merges.append(merge)
-        merge = self.fusion2(rgb[1], dep[1])
-        merges.append(merge)
-        merge = self.fusion3(rgb[2], dep[2])
-        merges.append(merge)
-        merge = self.fusion4(rgb[3], dep[3])
-        merges.append(merge)
-
+        # merge = self.fusion1(rgb[0], dep[0])
+        # merges.append(merge)
+        # merge = self.fusion2(rgb[1], dep[1])
+        # merges.append(merge)
+        # merge = self.fusion3(rgb[2], dep[2])
+        # merges.append(merge)
+        # merge = self.fusion4(rgb[3], dep[3])
+        # merges.append(merge)
+        for i in range (4):
+            merges.append(rgb[i]+dep[i])
         merge_out1 = self.Merge_out1(merges[-2],merges[-1])
         merge_out2 = self.Merge_out2(merges[-3],merge_out1)
         merge_out3 = self.Merge_out3(merges[-4],merge_out2)
