@@ -3,9 +3,10 @@ import os
 import torch.nn as nn
 # from torch.nn.modules.upsampling import Upsample
 from torch.nn.functional import interpolate
-from model.attention import GlobalContextBlock
+# from model.attention import GlobalContextBlock
 from backbone.vgg import B2_VGG
-from backbone.Shunted.SSA import shunted_t
+# from backbone.Shunted.SSA import shunted_t
+from TLD_BGRNet.Shunted.SSA import shunted_t
 import sys
 from collections import OrderedDict
 import functools
@@ -33,30 +34,8 @@ class BasicConv2d(nn.Module):
         x = self.relu(x)
         return x
 
-class PixelAttention(nn.Module):
-    def __init__(self, in_planes):
-        super(PixelAttention, self).__init__()
-        self.conv3 = BasicConv2d(in_planes,in_planes,kernel_size=1,stride=1,padding=0)
-        self.conv_mask = nn.Conv2d(in_planes, 1, kernel_size=1)
-        self.softmax = nn.Softmax(dim=2)
-    def forward(self, x):
-        batch, channel, height, width = x.size()
-        input_x = x
-        input_x = input_x.view(batch, channel, height * width)  # -> b c h*w
-        input_x = input_x.unsqueeze(1)  # -> b 1 c hw
-        # print(input_x.shape)
-        x = self.conv3(x)
-        res_x = self.conv_mask(x)  # b 1 h w
-        res_x = res_x.view(batch, 1, height * width)  # b 1 hw
-        res_x = self.softmax(res_x)  # b 1 hw
-        res_x = res_x.unsqueeze(-1)  # b 1 hw 1
-        # print(res_x.shape)
-        context = torch.matmul(input_x, res_x)  # b(1 c hw  *  1 hw 1) -> b 1 c 1
-        context = context.view(batch, channel, 1, 1)  # b c 1 1
-        return context
-
 class SimplePP(nn.Module):
-    def __init__(self, in_planes, out_planes,k):
+    def __init__(self, in_planes, out_planes,k=5):
         super(SimplePP, self).__init__()
         self.conv1 = BasicConv2d(in_planes, in_planes//2, kernel_size=1, stride=1, padding=0)
         self.conv2 = nn.Conv2d(in_planes*2, out_planes, kernel_size=1, stride=1, padding=0, bias=False)
@@ -65,11 +44,12 @@ class SimplePP(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
+        # print(x.shape)
+        # print(x.shape)
         x1 = self.mp(x)
         x2 = self.mp(x1)
+        # print(x2.shape)
         out = self.conv2(torch.cat((x,x1,x2,self.mp(x2)),dim=1))
-        # print(out_attention.shape)
-        out = out
         # print(out.shape)
         return out
 
@@ -79,27 +59,44 @@ MAIN_MODEL!!!!
 class SNet(nn.Module):
     def __init__(self, ):
         super(SNet, self).__init__()
+        # self.vgg = B2_VGG('rgb')
+        # self.vgg_dep = B2_VGG('dep')
         self.backbone = shunted_t()
-        load_state_dict = torch.load('/home/jcm/PycharmProject/TLD/backbone/Shunted/ckpt_T.pth')
+        ##这个地方加载权重
+        load_state_dict = torch.load('D:\TLD\TLD_BGRNet\Shunted\ckpt_T.pth')
         self.backbone.load_state_dict(load_state_dict)
-        self.enhance1 = SimplePP(in_planes=512,out_planes=512,k=7)
-        self.enhance2 = SimplePP(256,256,k=5)
+
+        # self.fusion5 = Fusion1(in_plane1=512)
+        # self.fusion4 = Fusion1(in_plane1=512)
+        # self.fusion3 = Fusion1(in_plane1=256)
+        # self.fusion2 = Fusion1(in_plane1=128)
+        # self.fusion1 = Fusion1(in_plane1=64)
+        self.enhance1 = SimplePP(in_planes=512,out_planes=512)
+        self.enhance2 = SimplePP(256,256)
+        # self.enhance1 = SimplePP(in_planes=512, out_planes=512)
+        # self.enhance2 = SimplePP(256, 256)
         self.enhance3 = nn.Sequential(BasicConv2d(128,128,3,1,1),BasicConv2d(128,128,3,1,1))
         self.enhance4 = nn.Sequential(BasicConv2d(64,64,3,1,1),
                                       BasicConv2d(64,64,3,1,1))
         self.conv64_3 = BasicConv2d(64,1,3,1,1)
         self.conv1_3 = BasicConv2d(1,3,3,1,1)
+        self.upsample2 = Up(scale_factor=2, mode='bilinear', align_corners=True)
         self.upsample4 = Up(scale_factor=4, mode='bilinear', align_corners=True)
         self.Merge_out1 = Merge_out(in1=256,in2=512)
         self.Merge_out2 = Merge_out(in1=128,in2=256)
         self.Merge_out3 = Merge_out(in1=64,in2=128)
         #11111111111111
+        self.conv512_64 = BasicConv2d(512,64,3,1,1)
+
 
     def forward(self, x, y):
         rgb = self.backbone(x)
+        # print(rgb[0].shape)
 
         merges = []
 
+        # for i in range(2):
+        #     merges.append(rgb[i])
         merges.append(self.enhance4(rgb[0]))
         merges.append(self.enhance3(rgb[1]))
         merges.append(self.enhance2(rgb[2]))
@@ -108,16 +105,29 @@ class SNet(nn.Module):
         merge_out1 = self.Merge_out1(merges[-2],merges[-1])
         merge_out2 = self.Merge_out2(merges[-3],merge_out1)
         merge_out3 = self.Merge_out3(merges[-4],merge_out2)
+        # merge_out3 = self.attention3(merge_out3)
+        # merge_out4 = self.Merge_out4(merges[0],merge_out3)
+        # out = self.Decoder(merge_out4,merge_final)
+        # print(merge_out3.shape)
+        # print(merge_out2.shape)
+        # print(merge_out1.shape)
+        # merge_out3 = self.upsample2(self.conv128_64(merge_out3))
+        # merge_out2 = self.upsample4(self.conv256_64(merge_out2))
+        # merge_out1 = self.upsample2(self.conv512_64(self.upsample4(merge_out1)))
+
+        #64,80,120
         out = self.conv64_3(self.upsample4(merge_out3))
+        #11111111111111
+
 
         return out,merges[3],merges[2],merges[1],merges[0]
+
 
 class Merge_out(nn.Module):
     def __init__(self, in1,in2):
         super(Merge_out,self).__init__()
         self.bcon2 = BasicConv2d(in_planes=in2,out_planes=in1,kernel_size=1,stride=1,padding=0)
         self.bconv = BasicConv2d(in_planes=in1*2,out_planes=in1 ,kernel_size=1,stride=1,padding=0)
-        # self.conv3 = BasicConv2d(in_planes=in1,out_planes=in1 ,kernel_size=3,stride=1,padding=1)
         self.upsample2 = Up(scale_factor=2, mode='bilinear', align_corners=True)
 
     def forward(self,d1,d5):
@@ -125,7 +135,7 @@ class Merge_out(nn.Module):
         d5 = self.upsample2(d5)
         out = torch.cat((d1,d5),dim=1)
         out = self.bconv(out)
-        # out = self.conv3(out)
+        # out = self.mp(out)
         return out
 
 class AMLP(nn.Module):
@@ -161,6 +171,7 @@ class Fusion1(nn.Module):
         self.gp = nn.AdaptiveAvgPool2d(1)
         self.mlp = AMLP(in_plane1)
         self.conv_mask = nn.Conv2d(in_plane1, 1, kernel_size=1)
+
         self.softmax = nn.Softmax(dim=2)
         self.relu = nn.ReLU()
 
